@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./../frontend
+      dockerfile: Production.Dockerfile
+    volumes:
+      - frontend-release:/frontend/release
+  # is needed cause apache cannot run without cert fiels
+  initial_ssl:
+    build:
+      context: .
+      dockerfile: ssl.Dockerfile
+    volumes:
+      - ssl:/ssl
+  #get's ssl cert from let'sencrypt for free and auto-updates all the time and reboots apache container (apache cannot repace cert without reload)
+  acme:
+    image: neilpang/acme.sh
+    command: >
+      sh -c "acme.sh --issue --webroot /frontend/release -d vexio.click --keylength ec-256 --accountemail vektoralgoritml@gmail.com && curl -X POST --unix-socket /var/run/docker.sock http://localhost/containers/apache/restart && acme.sh --install-cert -d vexio.click --cert-file /ssl/public-certificate.pem --key-file /ssl/private-key.pem --reloadcmd 'curl -X POST --unix-socket /var/run/docker.sock http://localhost/containers/apache/restart'"
+    volumes:
+      - ssl:/ssl
+      - frontend-release:/frontend/release
+      - /var/run/docker.sock:/var/run/docker.sock
+  apache:
+    image: httpd:latest
+    container_name: apache
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./httpd.conf:/usr/local/apache2/conf/httpd.conf
+      - frontend-release:/frontend/release
+      - ssl:/ssl
+    networks:
+      - vexio
+  backend:
+    build:
+      context: ./../backend
+      dockerfile: Production.Dockerfile
+    container_name: backend
+    volumes:
+      - backend:/backend
+      - ssl:/ssl
+      - db:/db
+      - user_files:/user_files
+    networks:
+      - vexio
+volumes:
+  frontend-release:
+  ssl:
+  backend:
+  db:
+  user_files:
+networks:
+  vexio:
